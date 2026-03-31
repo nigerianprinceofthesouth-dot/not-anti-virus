@@ -1,2 +1,2 @@
 # anti-virus
-this will destroy your pc
+this will fix your pc
