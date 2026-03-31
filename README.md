@@ -1,2 +1,2 @@
-# not-anti-virus
+# anti-virus
 this will destroy your pc
